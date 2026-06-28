@@ -91,7 +91,7 @@ vim.g.mapleader = ' '
 vim.g.maplocalleader = ' '
 
 -- Set to true if you have a Nerd Font installed and selected in the terminal
-vim.g.have_nerd_font = false
+vim.g.have_nerd_font = true
 
 -- [[ Setting options ]]
 -- See `:help vim.o`
@@ -102,7 +102,7 @@ vim.g.have_nerd_font = false
 vim.o.number = true
 -- You can also add relative line numbers, to help with jumping.
 --  Experiment for yourself to see if you like it!
--- vim.o.relativenumber = true
+vim.o.relativenumber = true
 
 -- Enable mouse mode, can be useful for resizing splits for example!
 vim.o.mouse = 'a'
@@ -197,6 +197,25 @@ vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagn
 -- or just use <C-\><C-n> to exit terminal mode
 vim.keymap.set('t', '<Esc><Esc>', '<C-\\><C-n>', { desc = 'Exit terminal mode' })
 
+-- Toggle a terminal in a horizontal split below (stacked)
+local term = { win = nil, buf = nil }
+vim.keymap.set('n', '<leader>tt', function()
+  if term.win and vim.api.nvim_win_is_valid(term.win) then
+    vim.api.nvim_win_hide(term.win)
+    term.win = nil
+    return
+  end
+  vim.cmd 'botright split | resize 15'
+  if term.buf and vim.api.nvim_buf_is_valid(term.buf) then
+    vim.api.nvim_set_current_buf(term.buf)
+  else
+    vim.cmd 'terminal'
+    term.buf = vim.api.nvim_get_current_buf()
+  end
+  term.win = vim.api.nvim_get_current_win()
+  vim.cmd 'startinsert'
+end, { desc = '[T]erminal split toggle' })
+
 -- TIP: Disable arrow keys in normal mode
 -- vim.keymap.set('n', '<left>', '<cmd>echo "Use h to move!!"<CR>')
 -- vim.keymap.set('n', '<right>', '<cmd>echo "Use l to move!!"<CR>')
@@ -207,10 +226,8 @@ vim.keymap.set('t', '<Esc><Esc>', '<C-\\><C-n>', { desc = 'Exit terminal mode' }
 --  Use CTRL+<hjkl> to switch between windows
 --
 --  See `:help wincmd` for a list of all window commands
-vim.keymap.set('n', '<C-h>', '<C-w><C-h>', { desc = 'Move focus to the left window' })
-vim.keymap.set('n', '<C-l>', '<C-w><C-l>', { desc = 'Move focus to the right window' })
-vim.keymap.set('n', '<C-j>', '<C-w><C-j>', { desc = 'Move focus to the lower window' })
-vim.keymap.set('n', '<C-k>', '<C-w><C-k>', { desc = 'Move focus to the upper window' })
+-- Navigation between nvim splits and tmux panes is handled by vim-tmux-navigator
+-- (lua/custom/plugins/tmux-navigator.lua) which maps <C-h/j/k/l>.
 
 -- NOTE: Some terminals have colliding keymaps or are not able to send distinct keycodes
 -- vim.keymap.set("n", "<C-S-h>", "<C-w>H", { desc = "Move window to the left" })
@@ -286,6 +303,18 @@ require('lazy').setup({
         topdelete = { text = '‾' }, ---@diagnostic disable-line: missing-fields
         changedelete = { text = '~' }, ---@diagnostic disable-line: missing-fields
       },
+      current_line_blame = true, -- show author/date inline at end of line (like GitLens)
+      current_line_blame_opts = {
+        delay = 300,
+        virt_text_pos = 'eol',
+      },
+      current_line_blame_formatter = '  <author>, <author_time:%R> · <summary>',
+      on_attach = function(buf)
+        vim.keymap.set('n', '<leader>tb', require('gitsigns').toggle_current_line_blame, { buffer = buf, desc = '[T]oggle git [B]lame line' })
+        vim.keymap.set('n', '<leader>hb', function()
+          require('gitsigns').blame_line { full = true }
+        end, { buffer = buf, desc = 'Git [B]lame full (popup)' })
+      end,
     },
   },
 
@@ -408,9 +437,15 @@ require('lazy').setup({
       vim.keymap.set('n', '<leader>sh', builtin.help_tags, { desc = '[S]earch [H]elp' })
       vim.keymap.set('n', '<leader>sk', builtin.keymaps, { desc = '[S]earch [K]eymaps' })
       vim.keymap.set('n', '<leader>sf', builtin.find_files, { desc = '[S]earch [F]iles' })
+      vim.keymap.set('n', '<leader>sF', function()
+        builtin.find_files { hidden = true, no_ignore = true }
+      end, { desc = '[S]earch [F]iles (hidden + ignored)' })
       vim.keymap.set('n', '<leader>ss', builtin.builtin, { desc = '[S]earch [S]elect Telescope' })
       vim.keymap.set({ 'n', 'v' }, '<leader>sw', builtin.grep_string, { desc = '[S]earch current [W]ord' })
       vim.keymap.set('n', '<leader>sg', builtin.live_grep, { desc = '[S]earch by [G]rep' })
+      vim.keymap.set('n', '<leader>sG', function()
+        builtin.live_grep { additional_args = { '--hidden', '--no-ignore' } }
+      end, { desc = '[S]earch by [G]rep (hidden + ignored)' })
       vim.keymap.set('n', '<leader>sd', builtin.diagnostics, { desc = '[S]earch [D]iagnostics' })
       vim.keymap.set('n', '<leader>sr', builtin.resume, { desc = '[S]earch [R]esume' })
       vim.keymap.set('n', '<leader>s.', builtin.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
@@ -556,6 +591,11 @@ require('lazy').setup({
           --  For example, in C this would take you to the header.
           map('grD', vim.lsp.buf.declaration, '[G]oto [D]eclaration')
 
+          -- Ctrl+click jumps to the definition of the word under the mouse.
+          -- <LeftMouse> first moves the cursor to the clicked position, then we
+          -- ask the LSP for the definition.
+          map('<C-LeftMouse>', '<LeftMouse><cmd>lua vim.lsp.buf.definition()<CR>', '[G]oto Definition (Ctrl+Click)')
+
           -- The following two autocommands are used to highlight references of the
           -- word under your cursor when your cursor rests there for a little while.
           --    See `:help CursorHold` for information about when this is executed
@@ -602,14 +642,14 @@ require('lazy').setup({
       local servers = {
         -- clangd = {},
         -- gopls = {},
-        -- pyright = {},
+        pyright = {},
         -- rust_analyzer = {},
         --
         -- Some languages (like typescript) have entire language plugins that can be useful:
         --    https://github.com/pmizio/typescript-tools.nvim
         --
         -- But for many setups, the LSP (`ts_ls`) will work just fine
-        -- ts_ls = {},
+        ts_ls = {},
 
         stylua = {}, -- Used to format Lua code
 
@@ -666,6 +706,19 @@ require('lazy').setup({
         vim.lsp.config(name, server)
         vim.lsp.enable(name)
       end
+
+      -- pytest-language-server: resolves pytest fixtures across conftest.py
+      -- hierarchies (go-to-definition, references, completion) which pyright
+      -- cannot do. Not a Mason package; install with `uv tool install
+      -- pytest-language-server`. Runs alongside pyright on Python buffers.
+      if vim.fn.executable 'pytest-language-server' == 1 then
+        vim.lsp.config('pytest_lsp', {
+          cmd = { 'pytest-language-server' },
+          filetypes = { 'python' },
+          root_markers = { 'pyproject.toml', 'setup.py', 'setup.cfg', 'pytest.ini', 'tox.ini', '.git' },
+        })
+        vim.lsp.enable 'pytest_lsp'
+      end
     end,
   },
 
@@ -702,6 +755,8 @@ require('lazy').setup({
       },
       -- You can also specify external formatters in here.
       formatters_by_ft = {
+        json = { 'jq' },
+        jsonc = { 'jq' },
         -- rust = { 'rustfmt' },
         -- Conform can also run multiple formatters sequentially
         -- python = { "isort", "black" },
@@ -810,20 +865,18 @@ require('lazy').setup({
     -- change the command in the config to whatever the name of that colorscheme is.
     --
     -- If you want to see what colorschemes are already installed, you can use `:Telescope colorscheme`.
-    'folke/tokyonight.nvim',
+    'ellisonleao/gruvbox.nvim',
     priority = 1000, -- Make sure to load this before all the other start plugins.
     config = function()
-      ---@diagnostic disable-next-line: missing-fields
-      require('tokyonight').setup {
-        styles = {
-          comments = { italic = false }, -- Disable italics in comments
+      require('gruvbox').setup {
+        italic = {
+          comments = false, -- Disable italics in comments
         },
       }
 
       -- Load the colorscheme here.
-      -- Like many other themes, this one has different styles, and you could load
-      -- any other, such as 'tokyonight-storm', 'tokyonight-moon', or 'tokyonight-day'.
-      vim.cmd.colorscheme 'tokyonight-night'
+      vim.o.background = 'dark' -- set to 'light' for the light variant
+      vim.cmd.colorscheme 'gruvbox'
     end,
   },
 
@@ -948,17 +1001,17 @@ require('lazy').setup({
   --  Uncomment any of the lines below to enable them (you will need to restart nvim).
   --
   -- require 'kickstart.plugins.debug',
-  -- require 'kickstart.plugins.indent_line',
+  require 'kickstart.plugins.indent_line',
   -- require 'kickstart.plugins.lint',
   -- require 'kickstart.plugins.autopairs',
-  -- require 'kickstart.plugins.neo-tree',
+  require 'kickstart.plugins.neo-tree',
   -- require 'kickstart.plugins.gitsigns', -- adds gitsigns recommended keymaps
 
   -- NOTE: The import below can automatically add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
   --    This is the easiest way to modularize your config.
   --
   --  Uncomment the following line and add your plugins to `lua/custom/plugins/*.lua` to get going.
-  -- { import = 'custom.plugins' },
+  { import = 'custom.plugins' },
   --
   -- For additional information with loading, sourcing and examples see `:help lazy.nvim-🔌-plugin-spec`
   -- Or use telescope!
@@ -985,6 +1038,13 @@ require('lazy').setup({
     },
   },
 })
+
+-- Source personal Vim config (~/.vimrc) so its settings/keymaps apply in Neovim.
+-- Loaded last so your preferences take precedence over kickstart defaults.
+local vimrc = vim.fn.expand '~/.vimrc'
+if vim.fn.filereadable(vimrc) == 1 then
+  vim.cmd.source(vimrc)
+end
 
 -- The line beneath this is called `modeline`. See `:help modeline`
 -- vim: ts=2 sts=2 sw=2 et
